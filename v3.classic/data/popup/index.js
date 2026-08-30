@@ -71,6 +71,22 @@ const qs = function(q, m) {
   return qs.cache[q];
 };
 
+// To prevent a race condition between the body iframe of index.html and this script, 
+// check whether the frame is ready first and only subscribe while it is still pending.
+const whenFrameReady = callback => {
+  const iframe = qs('iframe');
+  const doc = iframe.contentDocument;
+  // the placeholder about:blank document also reports "complete"; only body/index.html has a base
+  if (doc && doc.readyState === 'complete' && doc.querySelector('head base')) {
+    callback();
+  }
+  else {
+    iframe.addEventListener('load', callback, {
+      once: true
+    });
+  }
+};
+
 const html = (() => {
   // List of all used elements
   const li = document.createElement('li');
@@ -485,12 +501,10 @@ const scheme = {
     qs('iframe').contentDocument.documentElement?.classList?.remove('dark');
   }
 };
-qs('iframe').addEventListener('load', () => {
+whenFrameReady(() => {
   if (document.documentElement.classList.contains('dark')) {
     qs('iframe').contentDocument.documentElement?.classList?.add('dark');
   }
-}, {
-  once: true
 });
 chrome.storage.local.get({
   dark: false
@@ -586,7 +600,7 @@ chrome.runtime.onMessage.addListener(request => {
 });
 
 // init
-qs('iframe').onload = () => chrome.storage.session.get({
+whenFrameReady(() => chrome.storage.session.get({
   'cached-objects': []
 }, prefs => {
   objs = prefs['cached-objects'];
@@ -629,4 +643,4 @@ qs('iframe').onload = () => chrome.storage.session.get({
     };
     update();
   }
-});
+}));
