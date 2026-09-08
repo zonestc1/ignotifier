@@ -317,12 +317,40 @@ new Listen('accounts', 'click', ({target}) => {
 new Listen('next', 'click', () => update(false, true));
 new Listen('previous', 'click', () => update(true, false));
 
+// Remove the entries an action has just resolved,
+// so the panel can advance to the next mail or close
+// without waiting for a background check.
+const removeEntriesAndUpdatePanel = links => {
+  const done = new Set(typeof links === 'string' ? [links] : links);
+
+  for (const o of objs) {
+    const entries = o.xml.entries.filter(e => done.has(e.link) === false);
+    o.xml.fullcount = Math.max(0, o.xml.fullcount - (o.xml.entries.length - entries.length));
+    o.xml.entries = entries;
+  }
+  // the panel can only display an account that still has a listed entry
+  objs = objs.filter(o => o.xml.entries.length);
+  chrome.storage.session.set({
+    'cached-objects': objs
+  });
+
+  if (objs.length) {
+    update();
+  }
+  else {
+    window.close();
+  }
+};
+
 const action = (cmd, links = selected.entry.link, callback = () => {}) => {
   chrome.runtime.sendMessage({
     method: 'gmail.action',
     cmd,
     links
-  }, () => {
+  }, error => {
+    // an empty response means the worker resolved with no error
+    // a closed message channel also arrives empty but reports itself through lastError
+    const ok = !chrome.runtime.lastError && !error;
     callback();
     if (cmd === 'rd') {
       qs('read').textContent = locale.get('popup_read');
@@ -355,6 +383,10 @@ const action = (cmd, links = selected.entry.link, callback = () => {}) => {
     chrome.runtime.sendMessage({
       method: 'update'
     });
+    // Only optimistically update the panel if background check returns no error
+    if (ok) {
+      removeEntriesAndUpdatePanel(links);
+    }
   });
 };
 
